@@ -1,0 +1,104 @@
+import pandas as pd
+import numpy as np
+# import data rating dan panda sebagai data frame
+data = pd.read_csv("./kaggle/input/indonesia-tourism-destination/tourism_rating.csv")
+#data = pd.DataFrame(data, columns=["user", "item", "rating", "timestamp"]).drop(columns=['timestamp'])
+
+user_ids, _ = pd.factorize(data['User_Id'])
+item_ids, _ = pd.factorize(data['Place_Id'])
+data['User_Id'] = user_ids
+data['Place_Id'] = item_ids
+
+# buat the user item matrix dari pivoting tabel and normalize 
+ui_matrix = data.pivot_table(index='User_Id', columns='Place_Id', values='Place_Ratings')
+normalized_ui_matrix = ui_matrix.subtract(ui_matrix.mean(axis=1), axis=0)
+
+
+from sklearn.metrics.pairwise import cosine_similarity
+# cosine similarity matrix, user-based and item-based
+cos_user = cosine_similarity(normalized_ui_matrix)
+cos_item = cosine_similarity(normalized_ui_matrix.T)
+# pearson similarity matrix, user-based and item-based
+pearson_user = normalized_ui_matrix.T.corr(method="pearson")
+pearson_user = pearson_user.to_numpy() 
+# convert ke numpy array untuk kompabiliti
+pearson_item = normalized_ui_matrix.corr(method="pearson")
+pearson_item = pearson_item.to_numpy() 
+# convert ke numpy array untuk kompabiliti
+
+def predict(type, idx, top_n, sim_matrix):
+    """
+    input: index dari user/item (int), top n - jumlah user yang menggunakan (int), similarity matrix pilihan(array)
+    output: return item prediksi untuk target user (user-based) or user prediksi untuk target item (item-based)
+    """
+    # menampilkan top n user/item yang sama
+    similarities = sorted(sim_matrix[idx], reverse=True)[1:top_n+1]
+    sim_dict = {}
+    # ulang semua user/item dan dapatkan indexnya, nilai similarity = 'sim_dict'
+    for similarity in similarities:
+        sim_dict[np.where(sim_matrix[idx] == similarity)[0][0]] = similarity
+    # buat matrix kosong untuk menyimpan vektor prediksi
+    if type == 'user':
+        result = np.zeros(len(normalized_ui_matrix.columns))
+        for user in sim_dict:
+            # dapatkan nilai dari matrik user/item menggunakan index user
+            score = normalized_ui_matrix.loc[user]
+            # dapatkan weight dari user
+            weight = sim_dict[user]
+            # dapatkan rata2 weight untuk prediksi(rata2 diambil yang akhir)
+            result += np.dot(score, weight)
+    elif type == "item":
+        result = np.zeros(len(normalized_ui_matrix))
+        for item in sim_dict:
+            # dapatkan nilai dari matrik user/item menggunakan index item
+            score = normalized_ui_matrix[item]
+            # dapatkan weight dari item
+            weight = sim_dict[item]
+            # dapatkan rata2 weight untuk prediksi(rata2 diambil yang akhir)
+            result += np.dot(score, weight)
+    else:
+        return "Masukkan data dengan benar"
+    
+    return result/sum(sim_dict.values())
+
+def predicted_ui_matrix(type, top_n, sim_matrix):
+    pred = []
+    if type == 'user':
+        for i in range(len(normalized_ui_matrix)):
+            pred.append(predict(type, i, top_n, sim_matrix))
+        pred = np.array(pred)
+        return pred
+    elif type == 'item':
+        for i in range(len(normalized_ui_matrix.loc[0])):
+            pred.append(predict(type, i, top_n, sim_matrix))
+        pred = np.array(pred)
+        return pred.T
+    else:
+        return "Masukkan user dari user based dan item dari user based CF RS"
+
+from scipy.stats import spearmanr
+
+def evaluate(type, top_n, sim_matrix):
+    pred = predicted_ui_matrix(type, top_n, sim_matrix)
+    true = np.array(normalized_ui_matrix.values.tolist())
+    # calculate RMSE, MAE, and Spearman correlation
+    rmse = np.sqrt(np.mean((pred-true)**2))
+    print("RMSE: ", rmse)
+print("Pendekatan user-based dengan cosine similarity")
+
+import timeit
+
+start = timeit.default_timer()
+print(evaluate('user', 20, cos_user), "\n---------")
+stop = timeit.default_timer() # catat waktu selesai
+lama_eksekusi = stop - start # lama eksekusi dalam satuan detik
+print("Lama eksekusi: ",lama_eksekusi,"detik")
+
+print("Pendekatan user-based dengan pearson similarity")
+print(evaluate('user', 20, pearson_user), "\n---------")
+
+print("Pendekatan item-based dengan cosine similarity")
+print(evaluate('item', 20, cos_item), "\n---------")
+
+print("Pendekatan item-based dengan pearson similarity")
+print(evaluate('item', 20, pearson_item), "\n---------")
