@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-# import data rating dan panda sebagai data frame
+# import data rating dan panda sebagai data frame 
 data = pd.read_csv("./kaggle/input/indonesia-tourism-destination/tourism_rating.csv")
 #data = pd.DataFrame(data, columns=["user", "item", "rating", "timestamp"]).drop(columns=['timestamp'])
 
